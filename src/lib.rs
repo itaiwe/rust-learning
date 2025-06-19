@@ -2,6 +2,19 @@ use std::env;
 use std::error::Error;
 use std::fs;
 
+/// Runs the program with the given configuration.
+///
+/// # Arguments
+///
+/// - `config` (`Config`) - configuration for the program, including the query and file path.
+///
+/// # Returns
+///
+/// - `Result<(), Box<dyn Error>>` - result indicating success or failure.
+///
+/// # Errors
+///
+/// File reading errors or other runtime errors will return an `Err` variant with a boxed error type.
 pub fn run_program(config: Config) -> Result<(), Box<dyn Error>> {
     let contents = fs::read_to_string(config.file_path)?;
 
@@ -18,6 +31,13 @@ pub fn run_program(config: Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Configuration struct for the program.
+///
+/// # Fields
+///
+/// - `query` (`String`) - query string to search for in the file.
+/// - `file_path` (`String`) - file path to search within.
+/// - `ignore_case` (`bool`) - flag indicating whether the search should be case-insensitive.
 pub struct Config {
     pub query: String,
     pub file_path: String,
@@ -51,6 +71,16 @@ impl Config {
     }
 }
 
+/// Searches for lines in `contents` that contain the `query`.
+/// 
+/// # Arguments
+/// 
+/// - `query` (`&str`) - query string to search for.
+/// - `contents` (`&'a str`) - contents of the file to search within.
+/// 
+/// # Returns
+/// 
+/// - `Vec<&'a str>` - Results containing lines that match the query.
 pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     let mut results = Vec::new();
 
@@ -63,6 +93,16 @@ pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     results
 }
 
+/// Searches for lines in `contents` that contain the `query`, ignoring case.
+/// 
+/// # Arguments
+/// 
+/// - `query` (`&str`) - query string to search for.
+/// - `contents` (`&'a str`) - contents of the file to search within.
+/// 
+/// # Returns
+/// 
+/// - `Vec<&'a str>` - Results containing lines that match the query, ignoring case.
 pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
     let query = query.to_lowercase();
     let mut results = Vec::new();

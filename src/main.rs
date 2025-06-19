@@ -3,6 +3,11 @@ use std::process;
 
 use minigrep_learn::Config;
 
+/// Prints error to stderr and terminates process.
+/// 
+/// # Arguments
+/// 
+/// - `message` (`&str`) - Error message.
 fn handle_error(message: &str) -> ! {
     eprintln!("{message}");
     process::exit(1);
