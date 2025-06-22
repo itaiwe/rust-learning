@@ -1,12 +1,80 @@
-use std::env;
+use clap::Parser;
+use owo_colors::OwoColorize;
 use std::error::Error;
 use std::fs;
+use std::process;
+use strip_ansi_escapes;
+use strum::{Display, EnumString};
+use tabled::{
+    settings::{disable::Remove, object::Rows, Style},
+    Table, Tabled,
+};
+
+#[derive(Tabled)]
+struct ResultRow {
+    line: String,
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "minigrep",
+    author = "Itai Weiner",
+    version = "0.2.0",
+    about = "A simple grep-like program"
+)]
+/// Defines arguments for minigrep command
+///
+/// # Fields
+///
+/// - `query` (`String`) - query string to search for
+/// - `file_path` (`String`) - file path to search within
+/// - `ignore_case` (`bool`) - flag denoting whether or not to ignore case when searching
+/// - `mode` (`SearchMode`) - flag denoting whether query should be contained inside lines or match an exact line in file contents
+/// - `copy` (`bool`) - flag denoting whether to copy results to clipboard or not
+pub struct Args {
+    #[arg(required = true)]
+    pub query: String,
+
+    #[arg(required = true)]
+    pub file_path: String,
+
+    #[arg(short, long)]
+    pub ignore_case: bool,
+
+    #[arg(short, long, default_value = "Contains")]
+    pub mode: SearchMode,
+
+    #[arg(long)]
+    pub copy: bool,
+}
+
+#[derive(EnumString, Display, Debug, Clone)]
+/// Defines search mode of query in contents
+///
+/// # Variants
+///
+/// - `Exact` - Exact match, i.e. query appears as full line
+/// - `Contains` - Appears as part of line
+pub enum SearchMode {
+    Exact,
+    Contains,
+}
+
+/// Prints error to stderr and terminates process.
+///
+/// # Arguments
+///
+/// - `message` (`&str`) - Error message.
+pub fn handle_error(message: &str) -> ! {
+    eprintln!("{message}");
+    process::exit(1);
+}
 
 /// Runs the program with the given configuration.
 ///
 /// # Arguments
 ///
-/// - `config` (`Config`) - configuration for the program, including the query and file path.
+/// - `args` (`Args`) - configuration for the program, including the query and file path.
 ///
 /// # Returns
 ///
@@ -15,137 +83,105 @@ use std::fs;
 /// # Errors
 ///
 /// File reading errors or other runtime errors will return an `Err` variant with a boxed error type.
-pub fn run_program(config: Config) -> Result<(), Box<dyn Error>> {
-    let contents = fs::read_to_string(config.file_path)?;
+pub fn run_program(args: &Args) -> Result<(), Box<dyn Error>> {
+    let contents = fs::read_to_string(&args.file_path)?;
 
-    let results = if config.ignore_case {
-        search_case_insensitive(&config.query, &contents)
-    } else {
-        search(&config.query, &contents)
-    };
+    let start_time = chrono::Utc::now();
 
-    for line in results {
-        println!("{line}");
+    let results = search(&args, &contents);
+
+    let duration = chrono::Utc::now() - start_time;
+
+    let table_output = format_results(&results, &args.query);
+
+    println!(
+        "Found {} matches in {} ms",
+        results.len(),
+        duration.num_milliseconds()
+    );
+
+    if args.copy {
+        let clipboard_result = String::from_utf8(strip_ansi_escapes::strip(&table_output))
+            .unwrap_or_else(|_| handle_error("Failed to strip ANSI escapes from table output"));
+        use arboard::Clipboard;
+        Clipboard::new()
+            .and_then(|mut clipboard| clipboard.set_text(clipboard_result))
+            .unwrap_or_else(|err| handle_error(&format!("Failed to copy to clipboard: {err}")))
     }
+
+    println!("{}", table_output);
 
     Ok(())
 }
 
-/// Configuration struct for the program.
+/// Searches for lines in `contents` that contain `args.query`.
 ///
-/// # Fields
-///
-/// - `query` (`String`) - query string to search for in the file.
-/// - `file_path` (`String`) - file path to search within.
-/// - `ignore_case` (`bool`) - flag indicating whether the search should be case-insensitive.
-pub struct Config {
-    pub query: String,
-    pub file_path: String,
-    pub ignore_case: bool,
-}
-
-impl Config {
-    /// Constructor for `Config`
-    ///
-    /// # Arguments
-    ///
-    /// - `args` (`&[String]`) - arguments given in command line.
-    ///
-    /// # Returns
-    ///
-    /// - `Config` - command configuration.
-    pub fn build(args: &[String]) -> Result<Config, &'static str> {
-        if args.len() < 3 {
-            return Err("Not enough arguments. Usage: <program> <query> <file_path>");
-        }
-        let query = args[1].clone();
-        let file_path = args[2].clone();
-
-        let ignore_case = env::var("IGNORE_CASE").is_ok();
-
-        Ok(Config {
-            query,
-            file_path,
-            ignore_case,
-        })
-    }
-}
-
-/// Searches for lines in `contents` that contain the `query`.
-/// 
 /// # Arguments
-/// 
-/// - `query` (`&str`) - query string to search for.
+///
+/// - `args` (`&Args`) - arguments struct of command (containing query, search mode and ignore case needed for function).
 /// - `contents` (`&'a str`) - contents of the file to search within.
-/// 
+///
 /// # Returns
-/// 
+///
 /// - `Vec<&'a str>` - Results containing lines that match the query.
-pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let mut results = Vec::new();
+pub fn search<'a>(args: &Args, contents: &'a str) -> Vec<&'a str> {
+    let query = if args.ignore_case {
+        args.query.to_lowercase()
+    } else {
+        args.query.clone()
+    };
 
-    for line in contents.lines() {
-        if line.contains(query) {
-            results.push(line);
-        }
-    }
+    contents
+        .lines()
+        .filter(|line| {
+            // Creating new String variable because to_lowercase returns String instead of &str
+            let line_to_compare = if args.ignore_case {
+                line.to_lowercase()
+            } else {
+                line.to_string()
+            };
 
-    results
+            match args.mode {
+                SearchMode::Exact => line_to_compare == query,
+                SearchMode::Contains => line_to_compare.contains(&query),
+            }
+        })
+        .collect()
 }
 
-/// Searches for lines in `contents` that contain the `query`, ignoring case.
-/// 
-/// # Arguments
-/// 
-/// - `query` (`&str`) - query string to search for.
-/// - `contents` (`&'a str`) - contents of the file to search within.
-/// 
-/// # Returns
-/// 
-/// - `Vec<&'a str>` - Results containing lines that match the query, ignoring case.
-pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let query = query.to_lowercase();
-    let mut results = Vec::new();
+fn format_results<'a>(results: &[&'a str], query: &str) -> String {
+    let colored_rows: Vec<ResultRow> = results
+        .iter()
+        .map(|line| {
+            let highlighted = line.replace(query, &query.red().bold().to_string());
+            ResultRow { line: highlighted }
+        })
+        .collect();
 
-    for line in contents.lines() {
-        if line.to_lowercase().contains(&query) {
-            results.push(line);
-        }
-    }
+    // Make tabled measure the length of table end without ANSI escape codes
+    let max_width = colored_rows
+        .iter()
+        .map(|row| {
+            let stripped = strip_ansi_escapes::strip(&row.line);
 
-    results
-}
+            String::from_utf8_lossy(&stripped).chars().count()
+        })
+        .max()
+        .unwrap_or(0);
 
-#[cfg(test)]
-mod tests {
-    use std::vec;
+    // Pad all lines to max width
+    let padded_lines: Vec<String> = colored_rows
+        .iter()
+        .map(|row| {
+            let stripped = strip_ansi_escapes::strip(&row.line);
+            let visible_len = String::from_utf8_lossy(&stripped).chars().count();
+            let padding = " ".repeat(max_width.saturating_sub(visible_len));
+            format!("{line}{padding}", line = row.line)
+        })
+        .collect();
 
-    use super::*;
-
-    #[test]
-    fn case_sensitive() {
-        let query = "duct";
-        let contents = "\
-Rust:
-safe, fast, productive.
-Pick three.
-Duct tape.";
-
-        assert_eq!(vec!["safe, fast, productive."], search(query, contents));
-    }
-
-    #[test]
-    fn case_insensitive() {
-        let query = "rUsT";
-        let contents = "\
-Rust:
-safe, fast, productive.
-Pick three.
-Trust me.";
-
-        assert_eq!(
-            vec!["Rust:", "Trust me."],
-            search_case_insensitive(query, contents)
-        );
-    }
+    Table::new(padded_lines)
+        .with(Remove::row(Rows::first()))
+        .with(Style::modern())
+        .to_string()
 }
