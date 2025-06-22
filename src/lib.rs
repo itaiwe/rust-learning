@@ -3,7 +3,17 @@ use owo_colors::OwoColorize;
 use std::error::Error;
 use std::fs;
 use std::process;
+use strip_ansi_escapes;
 use strum::{Display, EnumString};
+use tabled::{
+    settings::{disable::Remove, object::Rows, Style},
+    Table, Tabled,
+};
+
+#[derive(Tabled)]
+struct ResultRow {
+    line: String,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -82,7 +92,7 @@ pub fn run_program(args: &Args) -> Result<(), Box<dyn Error>> {
 
     let duration = chrono::Utc::now() - start_time;
 
-    let output = format_results(&results, &args.query);
+    let table_output = format_results(&results, &args.query);
 
     println!(
         "Found {} matches in {} ms",
@@ -91,15 +101,15 @@ pub fn run_program(args: &Args) -> Result<(), Box<dyn Error>> {
     );
 
     if args.copy {
+        let clipboard_result = String::from_utf8(strip_ansi_escapes::strip(&table_output))
+            .unwrap_or_else(|_| handle_error("Failed to strip ANSI escapes from table output"));
         use arboard::Clipboard;
         Clipboard::new()
-            .and_then(|mut clipboard| clipboard.set_text(output.join("\n")))
+            .and_then(|mut clipboard| clipboard.set_text(clipboard_result))
             .unwrap_or_else(|err| handle_error(&format!("Failed to copy to clipboard: {err}")))
     }
 
-    for line in output {
-        println!("{line}");
-    }
+    println!("{}", table_output);
 
     Ok(())
 }
@@ -139,9 +149,39 @@ pub fn search<'a>(args: &Args, contents: &'a str) -> Vec<&'a str> {
         .collect()
 }
 
-fn format_results<'a>(results: &Vec<&'a str>, query: &str) -> Vec<String> {
-    results
-        .into_iter()
-        .map(|line| line.replace(query, &query.red().bold().to_string()))
-        .collect()
+fn format_results<'a>(results: &[&'a str], query: &str) -> String {
+    let colored_rows: Vec<ResultRow> = results
+        .iter()
+        .map(|line| {
+            let highlighted = line.replace(query, &query.red().bold().to_string());
+            ResultRow { line: highlighted }
+        })
+        .collect();
+
+    // Make tabled measure the length of table end without ANSI escape codes
+    let max_width = colored_rows
+        .iter()
+        .map(|row| {
+            let stripped = strip_ansi_escapes::strip(&row.line);
+
+            String::from_utf8_lossy(&stripped).chars().count()
+        })
+        .max()
+        .unwrap_or(0);
+
+    // Pad all lines to max width
+    let padded_lines: Vec<String> = colored_rows
+        .iter()
+        .map(|row| {
+            let stripped = strip_ansi_escapes::strip(&row.line);
+            let visible_len = String::from_utf8_lossy(&stripped).chars().count();
+            let padding = " ".repeat(max_width.saturating_sub(visible_len));
+            format!("{line}{padding}", line = row.line)
+        })
+        .collect();
+
+    Table::new(padded_lines)
+        .with(Remove::row(Rows::first()))
+        .with(Style::modern())
+        .to_string()
 }
