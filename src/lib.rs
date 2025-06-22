@@ -104,7 +104,7 @@ pub fn run_program(args: &Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Searches for lines in `contents` that contain the `query`.
+/// Searches for lines in `contents` that contain `args.query`.
 ///
 /// # Arguments
 ///
@@ -139,7 +139,7 @@ pub fn search<'a>(args: &Args, contents: &'a str) -> Vec<&'a str> {
         .collect()
 }
 
-pub fn format_results<'a>(results: &Vec<&'a str>, query: &str) -> Vec<String> {
+fn format_results<'a>(results: &Vec<&'a str>, query: &str) -> Vec<String> {
     results
         .into_iter()
         .map(|line| line.replace(query, &query.red().bold().to_string()))
