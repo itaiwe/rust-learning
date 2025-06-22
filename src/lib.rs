@@ -49,17 +49,23 @@ impl Config {
     ///
     /// # Arguments
     ///
-    /// - `args` (`&[String]`) - arguments given in command line.
+    /// - `args` (`Iterator<String>`) - arguments given in command line.
     ///
     /// # Returns
     ///
     /// - `Config` - command configuration.
-    pub fn build(args: &[String]) -> Result<Config, &'static str> {
-        if args.len() < 3 {
-            return Err("Not enough arguments. Usage: <program> <query> <file_path>");
-        }
-        let query = args[1].clone();
-        let file_path = args[2].clone();
+    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {
+        args.next(); // Skip the first argument (the program name)
+
+        let query = match args.next() {
+            Some(arg) => arg,
+            None => return Err("Didn't get a query"),
+        };
+
+        let file_path = match args.next() {
+            Some(arg) => arg,
+            None => return Err("Didn't get a file path"),
+        };
 
         let ignore_case = env::var("IGNORE_CASE").is_ok();
 
@@ -72,48 +78,37 @@ impl Config {
 }
 
 /// Searches for lines in `contents` that contain the `query`.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// - `query` (`&str`) - query string to search for.
 /// - `contents` (`&'a str`) - contents of the file to search within.
-/// 
+///
 /// # Returns
-/// 
+///
 /// - `Vec<&'a str>` - Results containing lines that match the query.
 pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let mut results = Vec::new();
-
-    for line in contents.lines() {
-        if line.contains(query) {
-            results.push(line);
-        }
-    }
-
-    results
+    contents
+        .lines()
+        .filter(|line| line.contains(query))
+        .collect()
 }
 
 /// Searches for lines in `contents` that contain the `query`, ignoring case.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// - `query` (`&str`) - query string to search for.
 /// - `contents` (`&'a str`) - contents of the file to search within.
-/// 
+///
 /// # Returns
-/// 
+///
 /// - `Vec<&'a str>` - Results containing lines that match the query, ignoring case.
 pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
-    let query = query.to_lowercase();
-    let mut results = Vec::new();
-
-    for line in contents.lines() {
-        if line.to_lowercase().contains(&query) {
-            results.push(line);
-        }
-    }
-
-    results
+    contents
+        .lines()
+        .filter(|line| line.to_lowercase().contains(&query.to_lowercase()))
+        .collect()
 }
 
 #[cfg(test)]

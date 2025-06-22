@@ -4,9 +4,9 @@ use std::process;
 use minigrep_learn::Config;
 
 /// Prints error to stderr and terminates process.
-/// 
+///
 /// # Arguments
-/// 
+///
 /// - `message` (`&str`) - Error message.
 fn handle_error(message: &str) -> ! {
     eprintln!("{message}");
@@ -14,9 +14,7 @@ fn handle_error(message: &str) -> ! {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    let config = Config::build(&args)
+    let config = Config::build(env::args())
         .unwrap_or_else(|err| handle_error(&format!("Problem parsing arguments: {err}")));
 
     if let Err(e) = minigrep_learn::run_program(config) {
