@@ -9,7 +9,7 @@ use strum::{Display, EnumString};
 #[command(
     name = "minigrep",
     author = "Itai Weiner",
-    version = "0.1.0",
+    version = "0.2.0",
     about = "A simple grep-like program"
 )]
 /// Defines arguments for minigrep command
