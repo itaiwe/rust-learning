@@ -97,7 +97,7 @@ pub fn run_program(args: &Args) -> Result<(), Box<dyn Error>> {
             .unwrap_or_else(|err| handle_error(&format!("Failed to copy to clipboard: {err}")))
     }
 
-    for line in results {
+    for line in output {
         println!("{line}");
     }
 
